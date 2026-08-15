@@ -1,0 +1,3 @@
+./COPYING
+./LICENSE
+./NOTICE.md

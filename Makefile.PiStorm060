@@ -1,0 +1,281 @@
+# Modified 2026-06-21 by Future Retro Fusion for FRF 2026 Frodo RTG.
+# Makefile.in for Frodo (AmigaOS with GCC)
+# Copyright (C) 1995-1997 Christian Bauer <cbauer@iphcip1.physik.uni-mainz.de>
+
+## Version information
+VERSION   = 4
+REVISION  = 1
+
+AMIGA_PREFIX  ?= /opt/amiga
+CROSS_COMPILE ?= $(AMIGA_PREFIX)/bin/m68k-amigaos-
+AMIGA_INCLUDE ?= $(AMIGA_PREFIX)/m68k-amigaos/sys-include
+CXX            := $(CROSS_COMPILE)g++
+CC             := $(CROSS_COMPILE)gcc
+CPPFLAGS       += -I$(AMIGA_INCLUDE) -I.
+CXXFLAGS       ?= -std=gnu++98 -O3 -fomit-frame-pointer -m68060 -mhard-float -fpermissive
+CFLAGS         ?= -O3 -fomit-frame-pointer -m68060 -mhard-float
+LIBRARIES      =
+RM             ?= rm -f
+HOSTCC         ?= cc
+
+.SUFFIXES: .o .cpp .c .h
+
+## Files
+OBJS    = main.o Display.o Prefs.o AmigaGUI.o SID.o REU.o IEC.o 1541fs.o \
+          1541d64.o 1541t64.o 1541job.o SAM.o
+SLOBJS  = $(OBJS) C64.o CPUC64.o VIC.o CIA.o CPU1541.o FRFEasyFlash.o FrodoAmigaCompat.o
+PCOBJS  = $(OBJS) C64_PC.o CPUC64_PC.o VIC.o CIA.o CPU1541_PC.o
+PCFLAGS = -DPRECISE_CPU_CYCLES=1 -DPRECISE_CIA_CYCLES=1 -DPC_IS_POINTER=0
+# Maximum-speed native RGB core: direct PC pointer, line-level CIA accounting.
+RGBFLAGS = -DFRF_RGBFAST=1 -DFRF_RGBFAST_DIRECT_PLANAR=1 -DPC_IS_POINTER=1
+RGBCXXFLAGS = $(CXXFLAGS) -fno-exceptions -fno-rtti -fno-strict-aliasing -finline-functions
+SCOBJS  = $(OBJS) C64_SC.o CPUC64_SC.o VIC_SC.o CIA_SC.o CPU1541_SC.o CPU_common.o FRFEasyFlash.o FrodoAmigaCompat.o
+SCFLAGS = -DFRODO_SC
+
+# FRF_RGBEXACT_NATIVE_1.0.28
+# Keep the established FrodoSC cycle core, but compile main/display separately
+# so this experimental binary can force PAL320 and use the direct planar writer.
+RGBEXACTFLAGS = -DFRODO_SC -DFRF_RGBEXACT=1 -DFRF_SC_NATIVE_DIRECT_PLANAR=1
+RGBEXACTOBJS = main_RGBExact.o Display_RGBExact.o $(filter-out main.o Display.o,$(SCOBJS))
+RGBOBJS = main_RGB.o Display_RGB.o Prefs.o AmigaGUI.o SID.o REU.o IEC.o 1541fs.o \
+          1541d64.o 1541t64.o 1541job.o SAM.o C64_RGB.o CPUC64_RGB.o \
+          VIC_RGB.o CIA_RGB.o CPU1541_RGB.o FRFEasyFlash.o FrodoAmigaCompat.o
+
+Frodo: $(SLOBJS)
+	$(CXX) -o Frodo $(SLOBJS) $(LDFLAGS) $(LIBRARIES)
+	@echo "Frodo binary built. Skipping AmigaDOS copy step on Linux host."
+
+FrodoPC: $(PCOBJS)
+	$(CXX) -o FrodoPC $(PCOBJS) $(LDFLAGS) $(LIBRARIES)
+	copy FrodoPC /
+
+FrodoSC: $(SCOBJS)
+	$(CXX) -o FrodoSC $(SCOBJS) $(LDFLAGS) $(LIBRARIES)
+	@echo "FrodoSC cycle-exact binary built. Skipping AmigaDOS copy step on Linux host."
+
+FrodoRGBExact: $(RGBEXACTOBJS)
+	$(CXX) -o FrodoRGBExact $(RGBEXACTOBJS) $(LDFLAGS) $(LIBRARIES)
+	@echo "FrodoRGBExact cycle-exact native PAL binary built. FrodoRGB was not replaced."
+
+FrodoRGB: $(RGBOBJS)
+	$(CXX) -o FrodoRGB $(RGBOBJS) $(LDFLAGS) $(LIBRARIES)
+	@echo "FrodoRGB fast native PAL binary built. Use a 320x256x4 PAL screen."
+
+all: Frodo FrodoPC FrodoSC FrodoRGB
+
+clean:
+	$(RM) $(SLOBJS) $(PCOBJS) $(SCOBJS) $(RGBOBJS) Frodo FrodoPC FrodoSC FrodoRGB
+
+.PHONY: all clean diagnostic
+
+diagnostic:
+	$(MAKE) -f Makefile.PiStorm060 clean
+	$(MAKE) -f Makefile.PiStorm060 CPPFLAGS="$(CPPFLAGS) -DFRF_ENABLE_DIAGNOSTIC_LOGS=1" Frodo
+
+.cpp.o:
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ -c $*.cpp
+
+.c.o:
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ -c $*.c
+.cpp.s:
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ -S $*.cpp -g0
+
+C64_SC.o: C64.cpp C64.h C64_Amiga.i CmdPipe.h CPUC64.h CPU1541.h VIC.h SID.h CIA.h REU.h IEC.h 1541job.h Display.h Prefs.h FRFBuildConfig.h FrodoFRFTrace.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SCFLAGS) -o $@ -c $*.cpp
+
+CPUC64_SC.o: CPUC64_SC.cpp CPUC64.h CPU_emulcycle.i CPU_common.h C64.h VIC.h SID.h CIA.h REU.h IEC.h Display.h Version.h FRFEasyFlash.h FRFBuildConfig.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SCFLAGS) -o $@ -c $*.cpp
+
+CPU1541_SC.o: CPU1541_SC.cpp CPU1541.h CPU_emulcycle.i CPU_common.h 1541job.h C64.h CIA.h Display.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SCFLAGS) -o $@ -c $*.cpp
+
+VIC_SC.o: VIC_SC.cpp VIC.h C64.h CPUC64.h Display.h Prefs.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SCFLAGS) -o $@ -c $*.cpp
+
+CIA_SC.o: CIA_SC.cpp CIA.h CPUC64.h CPU1541.h VIC.h Prefs.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SCFLAGS) -o $@ -c $*.cpp
+
+main_RGBExact.o: main.cpp main.h main_Amiga.i C64.h Display.h Prefs.h SAM.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBEXACTFLAGS) -o $@ -c main.cpp
+
+Display_RGBExact.o: Display.cpp Display.h Display_Amiga.i main.h Prefs.h Version.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBEXACTFLAGS) -o $@ -c Display.cpp
+
+main_RGB.o: main.cpp main.h main_Amiga.i C64.h Display.h Prefs.h SAM.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c main.cpp
+
+Display_RGB.o: Display.cpp Display.h Display_Amiga.i main.h Prefs.h Version.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c Display.cpp
+
+C64_RGB.o: C64.cpp C64.h C64_Amiga.i CmdPipe.h CPUC64.h CPU1541.h VIC.h SID.h CIA.h REU.h IEC.h 1541job.h Display.h Prefs.h FRFBuildConfig.h FrodoFRFTrace.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c C64.cpp
+
+CPUC64_RGB.o: CPUC64_PC.cpp CPUC64.cpp CPUC64.h CPU_emulline.i C64.h VIC.h SID.h CIA.h REU.h IEC.h Display.h Version.h FRFEasyFlash.h FRFBuildConfig.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c CPUC64_PC.cpp
+
+CPU1541_RGB.o: CPU1541.cpp CPU1541.h CPU_emulline.i 1541job.h C64.h CIA.h Display.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c CPU1541.cpp
+
+VIC_RGB.o: VIC_RGB.cpp VIC.h C64.h CPUC64.h Display.h Prefs.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c VIC_RGB.cpp
+
+CIA_RGB.o: CIA.cpp CIA.h CPUC64.h CPU1541.h VIC.h Prefs.h
+	$(CXX) $(CPPFLAGS) $(RGBCXXFLAGS) $(RGBFLAGS) -o $@ -c CIA.cpp
+
+C64_PC.o: C64.cpp C64.h C64_Amiga.i CmdPipe.h CPUC64.h CPU1541.h VIC.h SID.h CIA.h REU.h IEC.h 1541job.h Display.h Prefs.h FRFBuildConfig.h FrodoFRFTrace.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(PCFLAGS) -o $@ -c $*.cpp
+
+CPUC64_PC.o: CPUC64.cpp CPUC64.h CPU_emulline.i C64.h VIC.h SID.h CIA.h REU.h IEC.h Display.h Version.h FRFBuildConfig.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(PCFLAGS) -o $@ -c $*.cpp
+
+CPU1541_PC.o: CPU1541.cpp CPU1541.h CPU_emulline.i 1541job.h C64.h CIA.h Display.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(PCFLAGS) -o $@ -c $*.cpp
+
+cycle-exact-test: FrodoSC
+	@cp -f FrodoSC FrodoSC-RTG-X2-SCREENMODE-1.0.26
+	@echo "Created FrodoSC-RTG-X2-SCREENMODE-1.0.26"
+
+.PHONY: cycle-exact-test test-frodosc-crt
+
+test-frodosc-crt:
+	python3 tests/test_frodosc_crt_source.py
+
+## Dependencies
+main.o: main.cpp main.h main_Amiga.i C64.h Display.h Prefs.h SAM.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+C64.o: C64.cpp C64.h C64_Amiga.i CmdPipe.h CPUC64.h CPU1541.h VIC.h SID.h CIA.h REU.h IEC.h 1541job.h Display.h Prefs.h FRFBuildConfig.h FrodoFRFTrace.h
+CmdPipe.o: CmdPipe.h
+Display.o: Display.cpp Display.h Display_Amiga.i main.h Prefs.h Version.h FRFEasyFlash.h FRFBuildConfig.h FrodoFRFTrace.h FRFDiagnostics.h
+Prefs.o: Prefs.cpp Prefs.h Prefs_Amiga.i Display.h main.h FRFBuildConfig.h FRFDiagnostics.h
+CPUC64.o: CPUC64.cpp CPUC64.h CPU_emulline.i C64.h VIC.h SID.h CIA.h REU.h IEC.h Display.h Version.h FRFEasyFlash.h FRFBuildConfig.h FRFDiagnostics.h
+CPU1541.o: CPU1541.cpp CPU1541.h CPU_emulline.i 1541job.h C64.h CIA.h Display.h
+FrodoAmigaCompat.o: FrodoAmigaCompat.c
+CPU_common.o: CPU_common.cpp CPU_common.h
+VIC.o: VIC.cpp VIC.h C64.h CPUC64.h Display.h Prefs.h
+SID.o: SID.cpp SID.h SID_Amiga.i Prefs.h FRFBuildConfig.h FrodoFRFTrace.h
+CIA.o: CIA.cpp CIA.h CPUC64.h CPU1541.h VIC.h Prefs.h
+IEC.o: IEC.cpp IEC.h 1541fs.h 1541d64.h 1541t64.h Prefs.h Display.h
+1541fs.o: 1541fs.cpp 1541fs.h IEC.h main.h Prefs.h
+1541fs.h: IEC.h
+1541d64.o: 1541d64.cpp 1541d64.h IEC.h Prefs.h
+1541d64.h: IEC.h
+1541t64.o: 1541t64.cpp 1541t64.h IEC.h Prefs.h
+1541t64.h: IEC.h
+1541job.o: 1541job.cpp 1541job.h CPU1541.h Prefs.h
+REU.o: REU.cpp REU.h CPUC64.h Prefs.h
+SAM.o: SAM.cpp SAM.h C64.h CPUC64.h CPU1541.h VIC.h SID.h CIA.h
+
+FRFEasyFlash.o: FRFEasyFlash.cpp FRFEasyFlash.h FRFBuildConfig.h FRFDiagnostics.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o FRFEasyFlash.o -c FRFEasyFlash.cpp
+
+test-restored-startup:
+	python3 tests/test_restored_startup.py
+
+.PHONY: test-restored-startup
+
+
+test-normal-crt:
+	python3 tests/test_normal_crt_source.py
+	python3 tests/test_normal_crt_loader.py
+
+.PHONY: test-normal-crt
+
+test-crt-reset:
+	python3 tests/test_crt_reset_hook.py
+	python3 tests/test_normal_crt_loader.py
+
+.PHONY: test-crt-reset
+
+
+test-vic-fix46:
+	python3 tests/test_vic_fix46_source.py
+
+.PHONY: test-vic-fix46
+
+phase-sweep:
+	./build-phase-sweep.sh
+
+.PHONY: phase-sweep
+
+
+test-display-x2:
+	python3 tests/test_display_x2_source.py
+
+.PHONY: test-display-x2
+
+
+test-fullscreen-hotkeys:
+	python3 tests/test_fullscreen_hotkeys_source.py
+
+.PHONY: test-fullscreen-hotkeys
+
+
+test-fullscreen-scope:
+	python3 tests/test_fullscreen_compile_scope.py
+
+.PHONY: test-fullscreen-scope
+
+
+test-fullscreen-vic-header:
+	python3 tests/test_fullscreen_vic_header.py
+
+.PHONY: test-fullscreen-vic-header
+
+
+test-native-planar16:
+	python3 tests/test_native_planar16_source.py
+
+.PHONY: test-native-planar16
+
+
+test-screenmode-launch:
+	python3 tests/test_screenmode_launch_source.py
+
+.PHONY: test-screenmode-launch
+
+.PHONY: test-native-pal320-direct
+test-native-pal320-direct:
+	python3 tests/test_native_pal320_direct_source.py
+	python3 tests/test_display_source_integrity.py
+
+.PHONY: test-display-source-integrity
+test-display-source-integrity:
+	python3 tests/test_display_source_integrity.py
+
+
+.PHONY: test-magic64-line
+test-magic64-line:
+	python3 tests/test_magic64_line_output_source.py
+	python3 tests/test_magic64_line_syntax.py
+
+
+test-rgbfast:
+	python3 tests/test_rgbfast_source.py
+	python3 tests/test_rgbfast_syntax.py
+
+.PHONY: test-rgbfast
+
+.PHONY: test-rgbfast-hotpath
+test-rgbfast-hotpath:
+	python3 tests/test_rgbfast_hotpath_source.py
+
+.PHONY: test-rgbfast-direct-planar
+test-rgbfast-direct-planar:
+	python3 tests/test_rgbfast_direct_planar_source.py
+
+
+.PHONY: clean-rgbexact test-rgbexact-source
+clean-rgbexact:
+	$(RM) main_RGBExact.o Display_RGBExact.o FrodoRGBExact
+
+test-rgbexact-source:
+	python3 tests/test_rgbexact_native_source.py
+
+
+.PHONY: test-rtg-bottom-pal-auto
+test-rtg-bottom-pal-auto:
+	python3 tests/test_rtg_bottom_pal_auto_source.py
+
+
+.PHONY: test-cli-output-selector
+test-cli-output-selector:
+	python3 tests/test_cli_output_selector_source.py
